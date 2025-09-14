@@ -18,4 +18,4 @@ python main.py
 
 ## Deployment
 - Use `render.yaml` for Render deployment.
-# oanda_webhook_bot_Public
+# oanda_webhook_bot_Private
