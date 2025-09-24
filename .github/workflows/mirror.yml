@@ -24,7 +24,7 @@ jobs:
       - name: Generate .env.example
         run: |
           cd ../public
-          cat > .env.example <<EOL
+          cat > .env.example <<'EOL'
 # OANDA API credentials
 OANDA_API_TOKEN=your_oanda_api_token_here
 OANDA_ACCOUNT_ID=your_account_id_here
@@ -46,7 +46,8 @@ EOL
           if grep -q "Mirror Status" README.md; then
             sed -i "1s|.*|$BADGE|" README.md
           else
-            sed -i "1i $BADGE\n" README.md
+            # insert badge at top, no newline parsing issues
+            sed -i "1i $BADGE" README.md
           fi
 
           if grep -q "Last Synced:" README.md; then
