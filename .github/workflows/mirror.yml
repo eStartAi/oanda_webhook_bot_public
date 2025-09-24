@@ -15,16 +15,22 @@ jobs:
           fetch-depth: 0
 
       - name: Prepare export folder
-        run: mkdir ../public
-
-      - name: Export clean snapshot
         run: |
-          git archive --format=tar HEAD | tar -x -C ../public
+          set -e
+          rm -rf public
+          mkdir -p public
+          echo "::notice::Prepared public folder"
+
+      - name: Export clean snapshot (respects .gitattributes export-ignore)
+        run: |
+          set -e
+          git archive --format=tar HEAD | tar -x -C public
+          echo "::notice::Export done"
 
       - name: Generate .env.example
         run: |
-          cd ../public
-          cat > .env.example <<'EOL'
+          set -e
+          cat > public/.env.example <<'EOL'
 # OANDA API credentials
 OANDA_API_TOKEN=your_oanda_api_token_here
 OANDA_ACCOUNT_ID=your_account_id_here
@@ -35,34 +41,47 @@ WEBHOOK_SECRET=your_webhook_secret_here
 # Optional: Telegram integration
 TELEGRAM_SECRET=optional_telegram_key
 EOL
+          echo "::notice::.env.example generated"
 
-      - name: Update README with badge + last synced date
+      - name: Update README (badge + Last Synced)
+        shell: bash
         run: |
-          cd ../public
-          SYNC_DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+          set -e
+          README="public/README.md"
+          touch "$README"
+          SYNC_DATE="$(date -u +"%Y-%m-%d %H:%M UTC")"
+          BADGE='[![Mirror Status](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml/badge.svg)](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml)'
 
-          BADGE="[![Mirror Status](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml/badge.svg)](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml)"
-
-          if grep -q "Mirror Status" README.md; then
-            sed -i "1s|.*|$BADGE|" README.md
+          # Ensure badge on first line (no YAML-tricky escapes)
+          if grep -q "Mirror Status" "$README"; then
+            tmp=$(mktemp)
+            { echo "$BADGE"; tail -n +2 "$README"; } > "$tmp"
+            mv "$tmp" "$README"
           else
-            # insert badge at top, no newline parsing issues
-            sed -i "1i $BADGE" README.md
+            tmp=$(mktemp)
+            { echo "$BADGE"; echo ""; cat "$README"; } > "$tmp"
+            mv "$tmp" "$README"
           fi
 
-          if grep -q "Last Synced:" README.md; then
-            sed -i "s/^Last Synced:.*/Last Synced: $SYNC_DATE/" README.md
+          # Update or append Last Synced
+          if grep -q "^Last Synced:" "$README"; then
+            sed -i "s/^Last Synced:.*/Last Synced: $SYNC_DATE/" "$README"
           else
-            echo -e "\n---\nLast Synced: $SYNC_DATE" >> README.md
+            printf "\n---\nLast Synced: %s\n" "$SYNC_DATE" >> "$README"
           fi
+
+          echo "::notice::README updated"
 
       - name: Push to public repo
         run: |
-          cd ../public
+          set -e
+          cd public
           git init
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote add public https://x-access-token:${{ secrets.PUBLIC_REPO_PAT }}@github.com/eStartAi/oanda_webhook_bot_public.git
           git add .
           git commit -m "Sync from private repo"
+          git branch -M main
           git push --force public main
+          echo "::notice::Push completed"
