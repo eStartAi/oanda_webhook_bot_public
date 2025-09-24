@@ -29,15 +29,15 @@ jobs:
         run: |
           set -e
           cat > "$GITHUB_WORKSPACE/public/.env.example" <<'EOL'
-# OANDA API credentials
-OANDA_API_TOKEN=your_oanda_api_token_here
-OANDA_ACCOUNT_ID=your_account_id_here
+          # OANDA API credentials
+          OANDA_API_TOKEN=your_oanda_api_token_here
+          OANDA_ACCOUNT_ID=your_account_id_here
 
-# Webhook secret for TradingView or scanner alerts
-WEBHOOK_SECRET=your_webhook_secret_here
+          # Webhook secret for TradingView or scanner alerts
+          WEBHOOK_SECRET=your_webhook_secret_here
 
-# Optional: Telegram integration
-TELEGRAM_SECRET=optional_telegram_key
+          # Optional: Telegram integration
+          TELEGRAM_SECRET=optional_telegram_key
 EOL
 
       - name: Update README (badge + Last Synced)
