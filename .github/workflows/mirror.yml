@@ -25,20 +25,21 @@ jobs:
           set -e
           git archive --format=tar HEAD | tar -x -C "$GITHUB_WORKSPACE/public"
 
-      - name: Generate .env.example
+      - name: Generate .env.example (no heredoc)
         run: |
           set -e
-          cat > "$GITHUB_WORKSPACE/public/.env.example" <<'EOL'
-          # OANDA API credentials
-          OANDA_API_TOKEN=your_oanda_api_token_here
-          OANDA_ACCOUNT_ID=your_account_id_here
-
-          # Webhook secret for TradingView or scanner alerts
-          WEBHOOK_SECRET=your_webhook_secret_here
-
-          # Optional: Telegram integration
-          TELEGRAM_SECRET=optional_telegram_key
-EOL
+          FILE="$GITHUB_WORKSPACE/public/.env.example"
+          printf '%s\n' \
+            '# OANDA API credentials' \
+            'OANDA_API_TOKEN=your_oanda_api_token_here' \
+            'OANDA_ACCOUNT_ID=your_account_id_here' \
+            '' \
+            '# Webhook secret for TradingView or scanner alerts' \
+            'WEBHOOK_SECRET=your_webhook_secret_here' \
+            '' \
+            '# Optional: Telegram integration' \
+            'TELEGRAM_SECRET=optional_telegram_key' \
+            > "$FILE"
 
       - name: Update README (badge + Last Synced)
         run: |
@@ -48,18 +49,14 @@ EOL
           SYNC_DATE="$(date -u +"%Y-%m-%d %H:%M UTC")"
           BADGE='[![Mirror Status](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml/badge.svg)](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml)'
 
+          # Ensure badge on first line
           if grep -q "Mirror Status" "$README"; then
-            # Badge exists: keep it on the first line
-            tmp=$(mktemp)
-            { echo "$BADGE"; tail -n +2 "$README"; } > "$tmp"
-            mv "$tmp" "$README"
+            tmp=$(mktemp); { echo "$BADGE"; tail -n +2 "$README"; } > "$tmp"; mv "$tmp" "$README"
           else
-            # Insert badge at top
-            tmp=$(mktemp)
-            { echo "$BADGE"; echo; cat "$README"; } > "$tmp"
-            mv "$tmp" "$README"
+            tmp=$(mktemp); { echo "$BADGE"; echo; cat "$README"; } > "$tmp"; mv "$tmp" "$README"
           fi
 
+          # Update or append Last Synced
           if grep -q "^Last Synced:" "$README"; then
             sed -i "s/^Last Synced:.*/Last Synced: $SYNC_DATE/" "$README"
           else
