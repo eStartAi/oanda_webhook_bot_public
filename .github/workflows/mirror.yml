@@ -1,0 +1,68 @@
+
+
+name: Mirror to Public Repo
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Export clean snapshot
+        run: |
+          git archive --format=tar HEAD | tar -x -C ../public
+
+      - name: Generate .env.example
+        run: |
+          cd ../public
+          cat > .env.example <<EOL
+# OANDA API credentials
+OANDA_API_TOKEN=your_oanda_api_token_here
+OANDA_ACCOUNT_ID=your_account_id_here
+
+# Webhook secret for TradingView or scanner alerts
+WEBHOOK_SECRET=your_webhook_secret_here
+
+# Optional: Telegram integration
+TELEGRAM_SECRET=optional_telegram_key
+EOL
+
+      - name: Update README with badge + last synced date
+        run: |
+          cd ../public
+          SYNC_DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+
+          BADGE="[![Mirror Status](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml/badge.svg)](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml)"
+
+          if grep -q "Mirror Status" README.md; then
+            # Update existing badge (first line)
+            sed -i "1s|.*|$BADGE|" README.md
+          else
+            # Insert badge at the very top
+            sed -i "1i $BADGE\n" README.md
+          fi
+
+          if grep -q "Last Synced:" README.md; then
+            sed -i "s/^Last Synced:.*/Last Synced: $SYNC_DATE/" README.md
+          else
+            echo -e "\n---\nLast Synced: $SYNC_DATE" >> README.md
+          fi
+
+      - name: Push to public repo
+        run: |
+          cd ../public
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add public https://x-access-token:${{ secrets.PUBLIC_REPO_PAT }}@github.com/eStartAi/oanda_webhook_bot_public.git
+          git add .
+          git commit -m "Sync from private repo"
+          git push --force public main
