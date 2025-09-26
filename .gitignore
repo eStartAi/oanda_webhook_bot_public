@@ -1,13 +1,15 @@
+
+
 # -------------------------
 # Secrets & environment files
 # -------------------------
 .env
 *.env
 .env.*
+!.env.example
 secrets.json
 *.key
 *.pem
-
 # -------------------------
 # Python cache & build files
 # -------------------------
@@ -65,3 +67,11 @@ docker-compose.override.yml
 # -------------------------
 *.bak
 *.tmp
+nohup.out
+trade_logs.db
+
+
+# Secrets
+.env
+*.db
+*.sqlite
