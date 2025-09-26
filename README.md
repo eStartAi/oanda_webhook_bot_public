@@ -101,3 +101,8 @@ From now on, Git will ignore your local *_V*.py snapshots but will still track y
 
 
 👉 After running it, confirm with: cat .gitignore
+
+
+
+📌 To install the Git hook:
+bash install_hook.sh
