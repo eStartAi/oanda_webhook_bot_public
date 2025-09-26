@@ -106,3 +106,103 @@ From now on, Git will ignore your local *_V*.py snapshots but will still track y
 
 📌 To install the Git hook:
 bash install_hook.sh
+
+
+📦 Features Recap
+
+✅ Auto detects and switches to main branch
+
+✅ Adds all files (git add -A)
+
+✅ Prompts for custom commit message
+
+✅ Pushes to your private repo:
+git@github.com:eStartAi/oanda_webhook_bot.git
+
+✅ Optionally mirrors to your public repo:
+git@github.com:eStartAi/oanda_webhook_bot_public.git
+
+
+🧪 Instructions to Use:
+	Save this script as push_all.sh inside your project folder.
+
+	Make it executable & Run
+ 
+		chmod +x push_all.sh
+		./push_all.sh
+
+
+📦 What It Removes from Public Repo.........
+
+File/Pattern			Reason
+.env				API keys, secrets
+trade_logs.db			Internal trading records
+webhook.log			Bot logs
+nohup.out			Background process logs
+.env.example			Kept (or recreated if missing)
+
+
+🧪 Usage Instructions
+
+Save as: sync_from_private.sh
+
+Make executable:
+
+chmod +x sync_from_private.sh
+
+
+Run it:
+
+./sync_from_private.sh
+
+
+✅ .git/hooks/pre-push
+
+💡 What it Does
+
+Only checks when pushing to public remote
+
+Blocks .env, *.db, *.log, nohup.out
+
+Shows error and aborts the push
+
+Silent/pass-through for other remotes (like origin)💡 What it Does
+
+Only checks when pushing to public remote
+
+Blocks .env, *.db, *.log, nohup.out
+
+Shows error and aborts the push
+
+Silent/pass-through for other remotes (like origin)
+
+
+
+🛠 How to Install
+Save the hook
+
+bash
+Copy code
+nano .git/hooks/pre-push
+Paste the script above.
+
+Make it executable
+
+bash
+Copy code
+chmod +x .git/hooks/pre-push
+
+
+✅ Script: install_hook.sh
+
+🧪 To Use:
+
+Save this as: install_hook.sh
+
+Run:
+
+chmod +x install_hook.sh
+./install_hook.sh
+
+
+
