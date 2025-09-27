@@ -1,54 +1,52 @@
-import os
-import sqlite3
-from dotenv import load_dotenv
-import oandapyV20
-import oandapyV20.endpoints.trades as trades
+from utils.notify import telegram_notify
 
-# Load env
-load_dotenv()
-API_KEY = os.getenv("OANDA_API_TOKEN")
-ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID")
+# Replace with your actual logic
 
-if not API_KEY or not ACCOUNT_ID:
-    raise EnvironmentError("Missing OANDA_API_TOKEN or OANDA_ACCOUNT_ID in .env")
+def run_auto_close():
+    return [
+        {"instrument": "EUR_USD", "units": -1000, "pl": -2.45},
+        {"instrument": "GBP_USD", "units": -1000, "pl": -3.12}
+    ]
 
-# DB
-DB_FILE = "trade_logs.db"
-conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-cur = conn.cursor()
 
-# OANDA client
-client = oandapyV20.API(access_token=API_KEY)
+    """
+    Your logic here to close all losing positions.
+    Return a list of closed trades like:
+    [
+        {
+            'instrument': 'EUR_USD',
+            'units': -1000,
+            'pl': -4.56,
+            'reason': 'daily_auto_close'
+        },
+        ...
+    ]
+    """
+    # Example stub data
+    return [
+        {"instrument": "EUR_USD", "units": -1000, "pl": -4.32},
+        {"instrument": "GBP_USD", "units": -1000, "pl": -1.89},
+    ]
 
-def close_all_trades():
-    print("🔒 Closing all open trades...")
-    try:
-        r = trades.OpenTrades(ACCOUNT_ID)
-        client.request(r)
-        open_trades = r.response.get("trades", [])
 
-        if not open_trades:
-            print("✅ No open trades found.")
-            return
+def _format_money(v):
+    return f"${v:,.2f}"
 
-        for t in open_trades:
-            trade_id = t["id"]
-            instrument = t["instrument"]
-            units = t["currentUnits"]
 
-            print(f"➡️ Closing {instrument} trade {trade_id} ({units} units)")
-            try:
-                close_req = trades.TradeClose(ACCOUNT_ID, tradeID=trade_id, data={"units": "ALL"})
-                client.request(close_req)
-                cur.execute("INSERT INTO trades (symbol, side, price, units, sl, tp, trail, status) VALUES (?,?,?,?,?,?,?,?)",
-                            (instrument, "AUTO-CLOSE", 0, int(units), 0, 0, 0, "CLOSED"))
-                conn.commit()
-                print(f"✅ Closed trade {trade_id}")
-            except Exception as e:
-                print(f"❌ Error closing trade {trade_id}: {e}")
+def notify_auto_close(closed):
+    if not closed:
+        telegram_notify("🧹 Auto-close ran — no open losing positions found.")
+        return
 
-    except Exception as e:
-        print("❌ Error fetching open trades:", e)
+    lines = ["🧹 Auto-close summary:"]
+    total_pl = 0.0
+    for c in closed:
+        total_pl += float(c.get("pl", 0) or 0)
+        lines.append(f"• {c['instrument']}: units {c['units']}, P/L {_format_money(float(c['pl']))}")
+    lines.append(f"\nTotal P/L: {_format_money(total_pl)}")
+    telegram_notify("\n".join(lines))
+
 
 if __name__ == "__main__":
-    close_all_trades()
+    closed = run_auto_close()
+    notify_auto_close(closed)

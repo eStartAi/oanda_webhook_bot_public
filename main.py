@@ -7,6 +7,9 @@ import oandapyV20
 import oandapyV20.endpoints.orders as orders
 from datetime import datetime
 
+from utils.filters import ai_gate_allow, record_trade
+from utils.trade import create_trailing_stop
+
 # Load environment
 load_dotenv()
 API_KEY = os.getenv("OANDA_API_TOKEN")
@@ -59,15 +62,18 @@ def get_balance():
 
 # Validation
 def validate_alert(data):
-    required = ["symbol", "side", "price", "key"]
+    required = ["symbol", "side", "price", "secret"]
     for field in required:
         if field not in data:
             return False, f"Missing field: {field}"
 
-    if data["key"] != WEBHOOK_SECRET:
+    provided_secret = data["secret"]
+    expected_secret = WEBHOOK_SECRET
+    print(f"🔑 Comparing secrets: provided='{provided_secret}' expected='{expected_secret}'")
+
+    if provided_secret != expected_secret:
         return False, "Invalid webhook secret"
 
-    # sanity check
     try:
         price = float(data["price"])
         if price <= 0:
@@ -76,15 +82,6 @@ def validate_alert(data):
         return False, "Price not numeric"
 
     return True, "ok"
-
-@app.route("/")
-def home():
-    return jsonify({
-        "service": "OANDA Webhook Bot",
-        "status": "ok",
-        "account_id": ACCOUNT_ID,
-        "trade_logs_count": cur.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
-    })
 
 @app.route("/dashboard")
 def dashboard():
@@ -106,6 +103,13 @@ def webhook():
     price = float(data["price"])
     trail = float(data.get("trail", 0.0))
 
+    # ✅ AI filter logic
+    allowed, reason = ai_gate_allow(symbol)
+    if not allowed:
+        print(f"⛔️ Blocked by AI filter: {reason}")
+        return jsonify({"status": "blocked", "reason": reason}), 200
+
+    # Position size and SL/TP
     balance = get_balance()
     stop_loss_pips = 20  # placeholder
     units = calc_units(balance, 1, stop_loss_pips)
@@ -114,8 +118,10 @@ def webhook():
     tp = round(price + 0.0050, 5) if side == "buy" else round(price - 0.0050, 5)
 
     # Save to DB
-    cur.execute("INSERT INTO trades (symbol, side, price, units, sl, tp, trail, status) VALUES (?,?,?,?,?,?,?,?)",
-                (symbol, side, price, units, sl, tp, trail, "PENDING"))
+    cur.execute(
+        "INSERT INTO trades (symbol, side, price, units, sl, tp, trail, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (symbol, side, price, units, sl, tp, trail, "PENDING")
+    )
     conn.commit()
     print(f"✅ Alert saved to DB: {symbol} {side} at {price}")
 
@@ -138,7 +144,25 @@ def webhook():
         cur.execute("UPDATE trades SET status=? WHERE id=(SELECT MAX(id) FROM trades)", ("EXECUTED",))
         conn.commit()
         print("✅ Trade Executed:", r.response)
+
+        # ✅ Add trailing stop + AI timer
+        trade_id = None
+        try:
+            oft = r.response.get("orderFillTransaction") or {}
+            if "tradeOpened" in oft:
+                trade_id = oft["tradeOpened"]["tradeID"]
+            elif "tradesOpened" in oft:
+                trade_id = oft["tradesOpened"][0]["tradeID"]
+        except:
+            pass
+
+        if trade_id:
+            create_trailing_stop(symbol, trade_id)
+
+        record_trade(symbol)
+
         return jsonify({"status": "ok", "response": r.response})
+
     except Exception as e:
         cur.execute("UPDATE trades SET status=? WHERE id=(SELECT MAX(id) FROM trades)", ("FAILED",))
         conn.commit()
@@ -150,5 +174,5 @@ def auto_close():
     return jsonify({"status": "stub", "message": "Auto-close not yet implemented"})
 
 if __name__ == "__main__":
-    print("🚀 Starting Bot on port 5001...")
-    app.run(host="0.0.0.0", port=5001)
+    port = int(os.getenv("PORT", 5001))
+    app.run(host="0.0.0.0", port=port)
