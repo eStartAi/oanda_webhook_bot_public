@@ -1,0 +1,35 @@
+name: Reset Safe Go-Live Checklist
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  reset-checklist:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reset checklist back to [ ]
+        run: |
+          sed -i 's/\[x\]/[ ]/g' CHECKLIST.md
+          ts="> Last reset: $(date -u +"%Y-%m-%d %H:%M:%S UTC") by GitHub Actions"
+          if grep -q "^> Last reset:" CHECKLIST.md; then
+            sed -i "1s|.*|$ts|" CHECKLIST.md
+          else
+            sed -i "1i $ts\n" CHECKLIST.md
+          fi
+
+      - name: Commit reset checklist
+        run: |
+          if git diff --quiet; then
+            echo "✅ No changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -am "♻️ Reset Safe Go-Live Checklist (auto-reset with timestamp)"
+            git push
+          fi

@@ -1,0 +1,201 @@
+<html>
+<head><title>308 Permanent Redirect</title></head>
+<body>
+<center><h1>308 Permanent Redirect</h1></center>
+<hr><center>cloudflare</center>
+</body>
+</html>
+
+[Click to expand full patch]
+
+<details> <summary>👇 diff --git a/.env.example b/.env.example
++ # Telegram notifications
++ TELEGRAM_BOT_TOKEN=your_bot_token
++ TELEGRAM_CHAT_ID=123456789
++
++ # Trailing Stop Logic
++ TRAILING_STOP_ENABLED=true
++ TRAILING_STOP_PIPS=10
++
++ # AI Filter
++ AI_FILTER_ENABLED=true
++ AI_MIN_COOLDOWN_SEC=120
++ AI_ATR_PERIOD=14
++ AI_ATR_MIN=0.0008
++ AI_ATR_MAX=0.0080
+
+diff --git a/auto_close.py b/auto_close.py
++ from utils.notify import telegram_notify
++
++ def _format_money(v): return f"${v:,.2f}"
++
++ def notify_auto_close(closed):
++     if not closed:
++         telegram_notify("🧹 Auto-close ran — no open losing positions found.")
++         return
++     lines = ["🧹 Auto-close summary:"]
++     total_pl = 0.0
++     for c in closed:
++         total_pl += float(c.get("pl", 0) or 0)
++         lines.append(f"• {c['instrument']}: units {c['units']}, P/L {_format_money(float(c['pl']))}")
++     lines.append(f"\\nTotal P/L: {_format_money(total_pl)}")
++     telegram_notify("\\n".join(lines))
++
+  if __name__ == "__main__":
+      closed = run_auto_close()
++     notify_auto_close(closed)
+
+diff --git a/main.py b/main.py
++ from utils.filters import ai_gate_allow, record_trade
++ from utils.trade import create_trailing_stop
++
++ # Before placing order
++ allowed, reason = ai_gate_allow(instrument)
++ if not allowed:
++     app.logger.info(f"⛔️ Blocked by AI filter: {reason}")
++     return {"status": "blocked", "reason": reason}, 200
++
++ # After placing order
++ trade_id = None
++ try:
++     oft = resp.get("orderFillTransaction") or {}
++     if "tradeOpened" in oft:
++         trade_id = oft["tradeOpened"]["tradeID"]
++     elif "tradesOpened" in oft:
++         trade_id = oft["tradesOpened"][0]["tradeID"]
++ except:
++     pass
++
++ if trade_id:
++     create_trailing_stop(instrument, trade_id)
++
++ record_trade(instrument)
+
+diff --git a/utils/notify.py b/utils/notify.py
++ import os, urllib.request, urllib.parse
++
++ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
++ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
++
++ def telegram_notify(text: str):
++     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
++         return False
++     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
++     data = urllib.parse.urlencode({
++         "chat_id": TELEGRAM_CHAT_ID,
++         "text": text,
++         "parse_mode": "HTML",
++         "disable_web_page_preview": True
++     }).encode()
++     try:
++         with urllib.request.urlopen(urllib.request.Request(url, data=data)) as r:
++             return r.status == 200
++     except Exception:
++         return False
+
+diff --git a/utils/risk.py b/utils/risk.py
++ import os
++
++ TRAILING_STOP_ENABLED = os.getenv("TRAILING_STOP_ENABLED", "false").lower() == "true"
++ TRAILING_STOP_PIPS = float(os.getenv("TRAILING_STOP_PIPS", "10"))
++
++ def pip_size_for(instrument: str) -> float:
++     if instrument.endswith("_JPY"):
++         return 0.01
++     return 0.0001
++
++ def price_distance_from_pips(instrument: str, pips: float) -> float:
++     return pip_size_for(instrument) * pips
+
+diff --git a/utils/filters.py b/utils/filters.py
++ import os, time, json, urllib.request
++ from collections import defaultdict
++ from math import fabs
++
++ OANDA_API_TOKEN = os.getenv("OANDA_API_TOKEN")
++ OANDA_ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID")
++ OANDA_HOST = os.getenv("OANDA_HOST", "https://api-fxpractice.oanda.com")
++
++ AI_ENABLED = os.getenv("AI_FILTER_ENABLED", "false").lower() == "true"
++ AI_MIN_COOLDOWN_SEC = int(os.getenv("AI_MIN_COOLDOWN_SEC", "120"))
++ AI_ATR_PERIOD = int(os.getenv("AI_ATR_PERIOD", "14"))
++ AI_ATR_MIN = float(os.getenv("AI_ATR_MIN", "0.0008"))
++ AI_ATR_MAX = float(os.getenv("AI_ATR_MAX", "0.0080"))
++
++ _last_trade_ts = defaultdict(lambda: 0.0)
++
++ def _oanda_get(path, params: dict):
++     url = f"{OANDA_HOST}/v3/{path}"
++     if params:
++         qs = "&".join(f"{k}={v}" for k, v in params.items())
++         url = f"{url}?{qs}"
++     req = urllib.request.Request(url)
++     req.add_header("Authorization", f"Bearer {OANDA_API_TOKEN}")
++     with urllib.request.urlopen(req) as r:
++         return json.loads(r.read().decode())
++
++ def _atr(candles):
++     trs = []
++     prev_close = None
++     for c in candles:
++         h = float(c["mid"]["h"])
++         l = float(c["mid"]["l"])
++         close = float(c["mid"]["c"])
++         if prev_close is None:
++             tr = h - l
++         else:
++             tr = max(h - l, fabs(h - prev_close), fabs(l - prev_close))
++         trs.append(tr)
++         prev_close = close
++     return sum(trs[-AI_ATR_PERIOD:]) / min(AI_ATR_PERIOD, len(trs))
++
++ def ai_gate_allow(instrument: str, granularity="M5") -> (bool, str):
++     if not AI_ENABLED:
++         return (True, "AI filter disabled")
++     now = time.time()
++     if now - _last_trade_ts[instrument] < AI_MIN_COOLDOWN_SEC:
++         return (False, f"Cooldown active {AI_MIN_COOLDOWN_SEC}s for {instrument}")
++     try:
++         r = _oanda_get(f"instruments/{instrument}/candles", {
++             "count": max(20, AI_ATR_PERIOD+1),
++             "price": "M",
++             "granularity": granularity
++         })
++         candles = [c for c in r.get("candles", []) if c.get("complete")]
++         if len(candles) < AI_ATR_PERIOD:
++             return (False, "Not enough candles")
++         atr = _atr(candles)
++     except Exception as e:
++         return (False, f"ATR fetch failed: {e}")
++     if atr < AI_ATR_MIN:
++         return (False, f"ATR too low: {atr:.6f}")
++     if atr > AI_ATR_MAX:
++         return (False, f"ATR too high: {atr:.6f}")
++     return (True, f"Allowed (ATR={atr:.6f})")
++
++ def record_trade(instrument: str):
++     _last_trade_ts[instrument] = time.time()
+
+diff --git a/utils/trade.py b/utils/trade.py
++ from utils.risk import TRAILING_STOP_ENABLED, TRAILING_STOP_PIPS, price_distance_from_pips
++
++ def create_trailing_stop(instrument: str, trade_id: str):
++     if not TRAILING_STOP_ENABLED:
++         return None
++     distance = price_distance_from_pips(instrument, TRAILING_STOP_PIPS)
++     payload = {
++         "trailingStopLossOrder": {
++             "type": "TRAILING_STOP_LOSS",
++             "tradeID": trade_id,
++             "distance": f"{distance:.10f}",
++             "timeInForce": "GTC"
++         }
++     }
++     try:
++         return _oanda_req("/orders", payload)
++     except Exception as e:
++         return {"error": str(e)}
+</summary>
+<INSERTED IN NEXT MESSAGE — due to length>
+
+</details>
