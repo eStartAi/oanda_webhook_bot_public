@@ -1,0 +1,95 @@
+name: Mirror to Public Repo
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare export folder
+        run: |
+          set -e
+          rm -rf "$GITHUB_WORKSPACE/public"
+          mkdir -p "$GITHUB_WORKSPACE/public"
+
+      - name: Export clean snapshot (respects .gitattributes export-ignore)
+        run: |
+          set -e
+          git archive --format=tar HEAD | tar -x -C "$GITHUB_WORKSPACE/public"
+
+      - name: Generate .env.example
+        run: |
+          set -e
+          FILE="$GITHUB_WORKSPACE/public/.env.example"
+          printf '%s\n' \
+            '# === API Credentials ===' \
+            'OANDA_API_TOKEN=your_oanda_api_token_here' \
+            'OANDA_ACCOUNT_ID=your_account_id_here' \
+            '' \
+            '# === Webhook Secret ===' \
+            'WEBHOOK_SECRET=your_webhook_secret_here' \
+            '' \
+            '# === Telegram Integration (optional) ===' \
+            'TELEGRAM_SECRET=your_telegram_key_here' \
+            > "$FILE"
+
+      - name: Update README (badge + Last Synced)
+        run: |
+          set -e
+          README="$GITHUB_WORKSPACE/public/README.md"
+          [ -f "$README" ] || touch "$README"
+          SYNC_DATE="$(date -u +"%Y-%m-%d %H:%M UTC")"
+          BADGE='[![Mirror Status](https://github.com/eStartAi/scaleviper/actions/workflows/mirror.yml/badge.svg)](https://github.com/eStartAi/scaleviper/actions/workflows/mirror.yml)'
+
+          if grep -q "Mirror Status" "$README"; then
+            tmp=$(mktemp); { echo "$BADGE"; tail -n +2 "$README"; } > "$tmp"; mv "$tmp" "$README"
+          else
+            tmp=$(mktemp); { echo "$BADGE"; echo; cat "$README"; } > "$tmp"; mv "$tmp" "$README"
+          fi
+
+          if grep -q "^Last Synced:" "$README"; then
+            sed -i "s/^Last Synced:.*/Last Synced: $SYNC_DATE/" "$README"
+          else
+            printf "\n---\nLast Synced: %s\n" "$SYNC_DATE" >> "$README"
+          fi
+
+      - name: Push to public repo using PAT
+        continue-on-error: true
+        env:
+          PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+        run: |
+          set -euo pipefail
+          echo "🔐 Starting mirror push..."
+          cd "$GITHUB_WORKSPACE/public"
+
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B main
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "✅ No changes to commit — mirror already up to date."
+          else
+            git commit -m "🔄 Sync from private repo ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          fi
+
+          # 🔗 Use your PAT from GitHub Secrets for authentication
+          git remote remove public || true
+          git remote add public "https://eStartAi:${PAT}@github.com/eStartAi/oanda_webhook_bot_public.git"
+
+          echo "🚀 Pushing to public repo..."
+          if git push --force public HEAD:main; then
+            echo "✅ Mirror sync complete."
+          else
+            echo "⚠️ Mirror push failed — check PAT or repo permissions."
+            exit 0
+          fi
