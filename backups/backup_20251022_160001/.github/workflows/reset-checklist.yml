@@ -1,0 +1,53 @@
+name: ♻️ Reset Safe Go-Live Checklist
+
+on:
+  # Run manually or once per day at midnight UTC
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+# 🔑 Allow this workflow to commit/push to the same repo
+permissions:
+  contents: write
+
+jobs:
+  reset-checklist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reset Safe Go-Live Checklist timestamp
+        run: |
+          set -e
+          FILE="CHECKLIST.md"
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M UTC")
+
+          if [ -f "$FILE" ]; then
+            sed -i "s/^Last Reset:.*/Last Reset: ${TIMESTAMP}/" "$FILE" || true
+          fi
+
+          echo "♻️ Reset Safe Go-Live Checklist (auto-reset with timestamp)"
+          echo "Last Reset: ${TIMESTAMP}"
+
+      - name: Commit and push changes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add CHECKLIST.md
+          if git diff --cached --quiet; then
+            echo "✅ No changes detected. Nothing to commit."
+          else
+            git commit -m "♻️ Reset Safe Go-Live Checklist (auto-reset with timestamp)"
+            git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}"
+            git push origin main && echo "✅ Successfully pushed to ${GITHUB_REPOSITORY}" || {
+              echo "⚠️ Push failed — check branch protection or token permissions."
+              exit 0
+            }
+          fi

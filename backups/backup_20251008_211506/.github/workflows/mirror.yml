@@ -1,0 +1,83 @@
+name: Mirror to Public Repo
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare export folder
+        run: |
+          set -e
+          rm -rf "$GITHUB_WORKSPACE/public"
+          mkdir -p "$GITHUB_WORKSPACE/public"
+
+      - name: Export clean snapshot (respects .gitattributes export-ignore)
+        run: |
+          set -e
+          git archive --format=tar HEAD | tar -x -C "$GITHUB_WORKSPACE/public"
+
+      - name: Generate .env.example (no heredoc)
+        run: |
+          set -e
+          FILE="$GITHUB_WORKSPACE/public/.env.example"
+          printf '%s\n' \
+            '# OANDA API credentials' \
+            'OANDA_API_TOKEN=your_oanda_api_token_here' \
+            'OANDA_ACCOUNT_ID=your_account_id_here' \
+            '' \
+            '# Webhook secret for TradingView or scanner alerts' \
+            'WEBHOOK_SECRET=your_webhook_secret_here' \
+            '' \
+            '# Optional: Telegram integration' \
+            'TELEGRAM_SECRET=optional_telegram_key' \
+            > "$FILE"
+
+      - name: Update README (badge + Last Synced)
+        run: |
+          set -e
+          README="$GITHUB_WORKSPACE/public/README.md"
+          [ -f "$README" ] || touch "$README"
+          SYNC_DATE="$(date -u +"%Y-%m-%d %H:%M UTC")"
+          BADGE='[![Mirror Status](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml/badge.svg)](https://github.com/eStartAi/oanda_webhook_bot/actions/workflows/mirror.yml)'
+
+          if grep -q "Mirror Status" "$README"; then
+            tmp=$(mktemp); { echo "$BADGE"; tail -n +2 "$README"; } > "$tmp"; mv "$tmp" "$README"
+          else
+            tmp=$(mktemp); { echo "$BADGE"; echo; cat "$README"; } > "$tmp"; mv "$tmp" "$README"
+          fi
+
+          if grep -q "^Last Synced:" "$README"; then
+            sed -i "s/^Last Synced:.*/Last Synced: $SYNC_DATE/" "$README"
+          else
+            printf "\n---\nLast Synced: %s\n" "$SYNC_DATE" >> "$README"
+          fi
+
+      - name: Push to public repo
+        env:
+          PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+        run: |
+          set -euo pipefail
+          set -x
+          cd "$GITHUB_WORKSPACE/public"
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B main
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Sync from private repo"
+          fi
+          git remote remove public || true
+          git remote add public "https://x-access-token:${PUBLIC_REPO_PAT}@github.com/eStartAi/oanda_webhook_bot_public.git"
+          git push --force public HEAD:main
