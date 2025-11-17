@@ -1,0 +1,94 @@
+
+
+# -------------------------
+# Secrets & environment files
+# -------------------------
+.env
+*.env
+.env.*
+!.env.example
+secrets.json
+*.key
+*.pem
+# -------------------------
+# Python cache & build files
+# -------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# -------------------------
+# Virtual environments
+# -------------------------
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+
+# -------------------------
+# Logs & debug files
+# -------------------------
+*.log
+logs/
+debug.log
+
+# -------------------------
+# Jupyter / notebooks
+# -------------------------
+.ipynb_checkpoints
+
+# -------------------------
+# IDE / editor stuff
+# -------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# Deployment / container
+# -------------------------
+docker-compose.override.yml
+*.tar
+*.gz
+
+# -------------------------
+# Misc
+# -------------------------
+*.bak
+*.tmp
+nohup.out
+trade_logs.db
+
+
+# Secrets
+.env
+*.db
+*.sqlite
+
+# Secrets
+.env
+*.pem
+*.key
+*.p12
+__pycache__/
+
+# Secrets
+.env
+*.pem
+__pycache__/
+
+# Secrets
+.env
+*.pem
+__pycache__/

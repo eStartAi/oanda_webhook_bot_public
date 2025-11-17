@@ -1,0 +1,27 @@
+name: Enforce Checklist
+
+on:
+  push:
+    branches:
+      - main
+      - live
+
+jobs:
+  checklist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Enforce CHECKLIST.md update (safe HEAD check)
+        run: |
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            if ! git diff --name-only HEAD~1 HEAD | grep -q "^CHECKLIST.md$"; then
+              echo "❌ CHECKLIST.md was not updated in the latest commit."
+              exit 1
+            else
+              echo "✅ CHECKLIST.md was updated in this commit."
+            fi
+          else
+            echo "ℹ️ Skipping checklist diff check — likely first commit or no HEAD~1."
+          fi

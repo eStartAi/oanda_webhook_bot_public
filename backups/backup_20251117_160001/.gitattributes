@@ -1,0 +1,4 @@
+# Exclude sensitive files from export
+.env export-ignore
+*.db export-ignore
+*.sqlite export-ignore
